@@ -220,3 +220,7 @@ close*.mp4
 active/
 tmp/
 hi.mp4
+Include/
+Scripts/
+Lib/
+pyenv.cfg
