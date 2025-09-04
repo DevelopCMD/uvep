@@ -4,6 +4,7 @@ import sys
 import shlex
 import os
 import json
+import ffmpeg
 # Supported commands
 SUPPORTED = {
     "speed":          ["audio", "video"],
@@ -31,7 +32,11 @@ SUPPORTED = {
     "fisheye":        ["video"],
     "deepfry":        ["video"],
     "hue":            ["video"],
+    "huecycle":       ["video"],
     "huesaturation":  ["video"],
+    "abr":            ["video"],
+    "vbr":            ["video"],
+    "sharpen":        ["video"],
 }
 
 AUDIO_EXTS = (".wav", ".mp3", ".flac", ".ogg", ".m4a")
@@ -43,7 +48,6 @@ def run_cmd(cmd):
     except subprocess.CalledProcessError as e:
         print("Error running command:", e, file=sys.stderr)
         sys.exit(1)
-
 def get_file_type(filename):
     ext = os.path.splitext(filename)[1].lower()
     if ext in AUDIO_EXTS:
@@ -87,23 +91,25 @@ def constrain(val, min_val, max_val):
     if val == None:
         return None
     if type(val)     == str:
-        val     = int(val    )
+        val     = float(val)
     if type(min_val) == str:
         min_val = float(min_val)
     if type(max_val) == str:
         max_val = float(max_val)
     return min(max_val, max(min_val, val))
 
-def build_pipeline(commands, input_file, output_file):
+def parse(commands, input_file, output_file):
     print(f"Args: {commands}")
     file_type = get_file_type(input_file)
     if file_type == "unknown":
         print(f"Error: unsupported input file type: {os.path.splitext(input_file)[1]}")
         sys.exit(1)
-
     audio_effects = []
     video_filters = []
-
+    if file_type == "video":
+      inp = ffmpeg.input(input_file)
+      aud = inp.audio
+      vid = inp.video
     for cmd, val in commands.items():
         # Validate supported commands
         if cmd not in SUPPORTED:
@@ -118,14 +124,17 @@ def build_pipeline(commands, input_file, output_file):
             if file_type == "audio":
                 audio_effects.append(f"speed {val}")
             else:  # video
-                video_filters.append(f"setpts={1/float(val)}*PTS")
-                audio_effects.append(f"atempo={val}")
+                vid = vid.setpts(f"{1/float(val)}*PTS")
+                aud = aud.filter("atempo",val)
+                # video_filters.append(f"setpts={1/float(val)}*PTS")
+                # audio_effects.append(f"atempo={val}")
 
         elif cmd == "pitch":
             if file_type == "audio":
                 audio_effects.append(f"rubberband=pitch={(float(val)/100)+1}")
             else:
-                audio_effects.append(f"rubberband=pitch={(float(val)/100)+1}")
+                aud = aud.filter("rubberband",pitch=(float(val)/100)+1)
+                # audio_effects.append(f"rubberband=pitch={(float(val)/100)+1}")
 
         elif cmd == "reverb":
             if file_type == "audio":
@@ -137,11 +146,14 @@ def build_pipeline(commands, input_file, output_file):
             if file_type == "audio":
                 audio_effects.append(f"areverse")
             else:
-                video_effects.append(f"reverse")
-                audio_effects.append(f"areverse")
+                vid = vid.filter("reverse")
+                aud = aud.filter("areverse")
+                # video_effects.append(f"reverse")
+                # audio_effects.append(f"areverse")
 
         elif cmd == "volume":
-            audio_effects.append(f"volume={(float(val)/500)*2}")
+            aud = aud.filter("volume",volume=(float(val)/500)*2)
+            # audio_effects.append(f"volume={(float(val)/500)*2}")
 
         elif cmd == "bass":
             audio_effects.append(f"equalizer=f=60:t=q:w=1:g={(float(val)*0.5)}")
@@ -151,15 +163,16 @@ def build_pipeline(commands, input_file, output_file):
 
         # --- VIDEO ---
         elif cmd == "hflip":
-            video_filters.append("hflip")
+            vid = vid.hflip()
         elif cmd == "fps":
-            video_filters.append(f"fps=fps={val}")
+            vid = vid.filter("fps",{val})
+            # video_filters.append(f"fps=fps={val}")
         elif cmd == "watermark":
             print("NOT IMPLEMENT")
         elif cmd == "vflip":
-            video_filters.append("vflip")
+            vid = vid.vflip()
         elif cmd == "invert":
-            video_filters.append("negate")
+            vid = vid.filter("negate")
         elif cmd == "contrast":
             video_filters.append(f"eq=contrast={(float(val)/100)}")
         elif cmd == "brightness":
@@ -167,38 +180,68 @@ def build_pipeline(commands, input_file, output_file):
         elif cmd == "saturation":
             video_filters.append(f"eq=saturation={(float(val)/100)}")
         elif cmd == "pixelate":
-            video_filters.append(f"scale=iw/{val}:ih/{val},scale=iw:ih:flags=neighbor")
+            vid = vid.filter("scale",f"iw/{val}",f"ih/{val}")
+            vid = vid.filter("scale",f"iw*{val}",f"ih*{val}",sws_flags="neighbor")
+            # video_filters.append(f"scale=iw/{val}:ih/{val},scale=iw:ih:flags=neighbor")
         elif cmd == "blur":
-            video_filters.append(f"boxblur={val}:1")
+            vid = vid.filter("boxblur",val,1)
+            # video_filters.append(f"boxblur={val}:1")
         elif cmd == "sepia":
-            video_filters.append(f"colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131")
+            vid = vid.filter("colorchannelmixer",.393,.769,.189,0,.349,.686,.168,0,.272,.534,.131)
+            # video_filters.append(f"colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131")
         elif cmd == "rlag":
-            video_filters.append(f"random={val}")
+            vid = vid.filter("random",frames={val})
+            # video_filters.append(f"random={val}")
         elif cmd == "hue":
             val = constrain(val,-180,180)
             video_filters.append(f"hue=h={val}")
+        
         elif cmd == "deepfry":
             val = constrain(val,-100,100) / 10
-            video_filters.append(f"hue=s={val}")
+            vid = vid.hue(s=val)
+            # video_filters.append(f"hue=s={val}")
         elif cmd == "huesaturation":
             val = constrain(val,-180,180)
-            video_filters.append(f"huesaturation={val}:0.1:0:-100:100,format=yuv420p")
+            vid = vid.filter("huesaturation",val,0.1,0,-100,100)
+            # video_filters.append(f"huesaturation={val}:0.1:0:-100:100,format=yuv420p")
         elif cmd == "shake":
-            video_filters.append(f"crop='iw/{val}:ih/{val}:(random(0)*2-1)*in_w:(random(0)*2-1)*in_h',scale=iw*{val}:ih*{val},setsar=1:1")
+            vid = vid.filter("crop","iw/1.1","ih/1.1","(random(0)*2-1)*in_w","(random(0)*2-1)*in_h")
+            vid = vid.filter("scale",f"iw*{val}",f"ih*{val}")
+            vid = vid.filter("setsar",r=1)
+            # video_filters.append(f"crop='iw/{val}:ih/{val}:(random(0)*2-1)*in_w:(random(0)*2-1)*in_h',scale=iw*{val}:ih*{val},setsar=1:1")
         elif cmd == "fisheye":
+            val = int(constrain(val,1,2))
             probe = ffprobe(input_file)
-            video_filters.append(f"v360=input=e:output=ball,scale={probe['streams'][0]['width']}:{probe['streams'][0]['height']},setsar=1:1")
+            print(probe["streams"][0])
+            for i in range(val):
+              vid = vid.filter("v360",input="e",output="ball")
+              vid = vid.filter("scale",w=probe['streams'][0]['width'],h=probe['streams'][0]['height'])
+            vid = vid.filter("setsar",r=1)
+            # video_filters.append(f"v360=input=e:output=ball,scale={probe['streams'][0]['width']}:{probe['streams'][0]['height']},setsar=1:1")
+        elif cmd == "vbr":
+            vb = 100 + 2000 * constrain(100 - float(val),2,100)
+        elif cmd == "abr":
+            ab = 100 + 2000 * constrain(100 - float(val),2,100)
         elif cmd == "grayscale":
-            video_filters.append("hue=s=0")
+            vid = vid.hue(s=0)
+            # video_filters.append("hue=s=0")
 
     # Build command
-    if file_type == "audio":
-        return f"sox {shlex.quote(input_file)} {shlex.quote(output_file)} " + " ".join(audio_effects)
+    # if file_type == "audio"
+        # return f"sox {shlex.quote(input_file)} {shlex.quote(output_file)} " + " ".join(audio_effects)
 
     if file_type == "video":
         vf = f"-vf \"{','.join(video_filters)}\"" if video_filters else ""
         af = f"-af \"{','.join(audio_effects)}\"" if audio_effects else ""
-        return f"ffmpeg -loglevel quiet -y -i {shlex.quote(input_file)} {vf} {af} -c:v libx264 -c:a aac {shlex.quote(output_file)}"
+        # if vb
+          # vidbit = f"-b:v {vb}"
+        # if ab
+          # audbit = f"-b:a {ab}"
+    try:
+        ffmpeg.output(aud, vid, output_file, pix_fmt='yuv420p').run()
+    except ffmpeg.Error as e:
+      print(f"Error! {e}")
+    return file_type
 
 def parse_command_string(cmd_string):
     commands = {}
@@ -226,11 +269,15 @@ def main():
     parser.add_argument("-i", "--input", required=True, help="Input media file")
     parser.add_argument("commands", help='Command string, e.g. "speed=1.5,contrast=2,hflip=1"')
     parser.add_argument("output", help="Output file")
+    parser.add_argument("-v","--verbose", help="Verbose Output, includes execution time and adding commands.")
     args = parser.parse_args()
 
     commands = parse_command_string(args.commands)
-    cmd = build_pipeline(commands, args.input, args.output)
-    run_cmd(cmd)
+    message = parse(commands, args.input, args.output)
+    print(message)
+    # cmd = build_pipeline(commands, args.input, args.output)
+    # run_cmd(cmd)
+    print(f"check {args.output}.")
 
 if __name__ == "__main__":
     main()
