@@ -195,7 +195,12 @@ def parse(commands, input_file, output_file):
         elif cmd == "hue":
             val = constrain(val,-180,180)
             video_filters.append(f"hue=h={val}")
-        
+        elif cmd == "huecycle":
+            val = constrain(val,1,25)
+            vid = vid.hue(h=f"t*360*{val}")
+        elif cmd == "sharpen":
+            val = int(constrain(val,1,10))
+            vid = vid.filter("unsharp",val,val)
         elif cmd == "deepfry":
             val = constrain(val,-100,100) / 10
             vid = vid.hue(s=val)
@@ -238,7 +243,7 @@ def parse(commands, input_file, output_file):
         # if ab
           # audbit = f"-b:a {ab}"
     try:
-        ffmpeg.output(aud, vid, output_file, pix_fmt='yuv420p').run()
+      ffmpeg.output(aud, vid, output_file, pix_fmt='yuv420p', video_bitrate=vb or 640000, audio_bitrate=ab or 192000).run()
     except ffmpeg.Error as e:
       print(f"Error! {e}")
     return file_type
