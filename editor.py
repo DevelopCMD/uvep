@@ -106,6 +106,8 @@ def parse(commands, input_file, output_file):
         sys.exit(1)
     audio_effects = []
     video_filters = []
+    ab = 64000
+    vb = 1500000
     if file_type == "video":
       inp = ffmpeg.input(input_file)
       aud = inp.audio
