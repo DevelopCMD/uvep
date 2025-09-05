@@ -165,7 +165,7 @@ def parse(commands, input_file, output_file):
         elif cmd == "hflip":
             vid = vid.hflip()
         elif cmd == "fps":
-            vid = vid.filter("fps",{val})
+            vid = vid.filter("fps",val)
             # video_filters.append(f"fps=fps={val}")
         elif cmd == "watermark":
             print("NOT IMPLEMENT")
@@ -190,7 +190,7 @@ def parse(commands, input_file, output_file):
             vid = vid.filter("colorchannelmixer",.393,.769,.189,0,.349,.686,.168,0,.272,.534,.131)
             # video_filters.append(f"colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131")
         elif cmd == "rlag":
-            vid = vid.filter("random",frames={val})
+            vid = vid.filter("random",frames=val)
             # video_filters.append(f"random={val}")
         elif cmd == "hue":
             val = constrain(val,-180,180)
