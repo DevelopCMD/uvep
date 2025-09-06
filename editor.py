@@ -5,6 +5,9 @@ import shlex
 import os
 import json
 import ffmpeg
+from pathHelper import getName
+from sfx import addSounds
+from moviepy import *
 # Supported commands
 SUPPORTED = {
     "speed":          ["audio", "video"],
@@ -37,6 +40,7 @@ SUPPORTED = {
     "abr":            ["video"],
     "vbr":            ["video"],
     "sharpen":        ["video"],
+    "sfx":            ["video"]
 }
 
 AUDIO_EXTS = (".wav", ".mp3", ".flac", ".ogg", ".m4a")
@@ -44,7 +48,7 @@ VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".webm")
 
 def run_cmd(cmd):
     try:
-        subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(shlex.split(cmd), check=True)
     except subprocess.CalledProcessError as e:
         print("Error running command:", e, file=sys.stderr)
         sys.exit(1)
@@ -97,7 +101,9 @@ def constrain(val, min_val, max_val):
     if type(max_val) == str:
         max_val = float(max_val)
     return min(max_val, max(min_val, val))
-
+def outputAudio(audio_stream,filename:str):
+  ffmpeg.output(audio_stream,f"{filename}.wav",format="wav").run(overwrite_output=True, quiet=True)
+mapping = ["0:v:0","1:a:0"]
 def parse(commands, input_file, output_file):
     print(f"Args: {commands}")
     file_type = get_file_type(input_file)
@@ -110,6 +116,7 @@ def parse(commands, input_file, output_file):
     vb = 1500000
     if file_type == "video":
       inp = ffmpeg.input(input_file)
+      sfx = None
       aud = inp.audio
       vid = inp.video
     for cmd, val in commands.items():
@@ -211,6 +218,11 @@ def parse(commands, input_file, output_file):
             val = constrain(val,-180,180)
             vid = vid.filter("huesaturation",val,0.1,0,-100,100)
             # video_filters.append(f"huesaturation={val}:0.1:0:-100:100,format=yuv420p")
+        elif cmd == "sfx":
+            val = int(constrain(val,1,100))
+            outputAudio(aud,f"sfx_{getName(input_file)}")
+            addSounds(f"sfx_{getName(input_file)}.wav",val,"backend/sounds")
+            sfx = f"sfx_{getName(input_file)}.wav"
         elif cmd == "shake":
             vid = vid.filter("crop","iw/1.1","ih/1.1","(random(0)*2-1)*in_w","(random(0)*2-1)*in_h")
             vid = vid.filter("scale",f"iw*{val}",f"ih*{val}")
@@ -245,9 +257,21 @@ def parse(commands, input_file, output_file):
         # if ab
           # audbit = f"-b:a {ab}"
     try:
-      ffmpeg.output(aud, vid, output_file, pix_fmt='yuv420p', video_bitrate=vb or 640000, audio_bitrate=ab or 192000).run()
+        ffmpeg.output(vid,aud,output_file,pix_fmt='yuv420p', video_bitrate=vb or 640000, audio_bitrate=ab or 192000).run(overwrite_output=True,quiet=True)
     except ffmpeg.Error as e:
       print(f"Error! {e}")
+    if sfx:
+        bruj = VideoFileClip(output_file)
+        soundy = AudioFileClip(sfx)
+        if soundy.duration > bruj.duration:
+          soundy = soundy.subclip(0, bruj.duration)
+        clip = bruj.set_audio(soundy)
+        clip.write_videofile(f"{getName(output_file)} (sfx).mp4",codec="libx264",audio_codec="aac",verbose=False)
+        bruj.close()
+        soundy.close()
+        os.remove(output_file)
+        os.rename(f"{getName(output_file)} (sfx).mp4",output_file)
+        os.remove(sfx)
     return file_type
 
 def parse_command_string(cmd_string):
