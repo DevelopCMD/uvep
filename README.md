@@ -4,3 +4,5 @@
 Universal Video Editor Platform, also known as UVEP, is an initiative to create a program base that all VideoBots can use, and it is easy to port to, and is more cleaner and organized than VideoEditBot.<br>
 <br>
 This program was coded by TRP and AMTVE245.<br>
+<hr \>
+It is open source and free to use for any developer who wants to create their own videobot with ease.
