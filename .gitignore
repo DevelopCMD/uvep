@@ -224,3 +224,4 @@ Include/
 Scripts/
 Lib/
 pyvenv.cfg
+sfx_*.wav
