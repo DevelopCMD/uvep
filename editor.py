@@ -9,6 +9,8 @@ from pathHelper import getName
 from sfx import addSounds
 from moviepy.editor import VideoFileClip, AudioFileClip
 from math import floor
+from random import choice
+from PIL import Image
 # Supported commands
 SUPPORTED = {
     "speed":          ["audio", "video"],
@@ -47,6 +49,8 @@ SUPPORTED = {
     "zoom":           ["video"],
     "areverse":       ["audio","video"],
     "vreverse":       ["video"],
+    "bandicam":       ["video"],
+    "hypercam":       ["video"]
 }
 
 AUDIO_EXTS = (".wav", ".mp3", ".flac", ".ogg", ".m4a")
@@ -66,7 +70,8 @@ def get_file_type(filename):
         return "video"
     else:
         return "unknown"
-
+def getImageRes(path):
+    return Image.open(path).size
 def ffprobe(file_path):
     """
     Runs ffprobe on a file and returns the output as a Python dictionary.
@@ -166,7 +171,15 @@ def parse(commands, input_file, output_file):
         elif cmd == "fps":
             vid = vid.filter("fps",val)
         elif cmd == "watermark":
-            print("NOT IMPLEMENT")
+            # suffering
+            probe = ffprobe(input_file)
+            val = int(constrain(val,1,25))
+            watermark = ["bandicam","hypercam","reddit"]
+            watermarks = []
+            for i in range(val):
+                watermarks.append(choice(watermark))
+            for i, v in enumerate(watermarks):
+                vid = vid.overlay(ffmpeg.input(f"backend/watermarks/{v}.png").filter("scale", w = probe["streams"][0]["width"], h = probe["streams"][0]["height"]))
         elif cmd == "vflip":
             vid = vid.vflip()
         elif cmd == "invert":
@@ -205,6 +218,12 @@ def parse(commands, input_file, output_file):
         elif cmd == "deepfry":
             val = constrain(val,-100,100) / 10
             vid = vid.hue(s=val)
+        elif cmd == "bandicam":
+            probe = ffprobe(input_file)
+            vid = vid.overlay(ffmpeg.input("backend/watermarks/bandicam.png").filter("scale", w = probe["streams"][0]["width"], h = probe["streams"][0]["height"]))
+        elif cmd == "hypercam":
+            probe = ffprobe(input_file)
+            vid = vid.overlay(ffmpeg.input("backend/watermarks/hypercam.png").filter("scale", w = probe["streams"][0]["width"], h = probe["streams"][0]["height"]))
         elif cmd == "huesaturation":
             val = constrain(val,-180,180)
             vid = vid.filter("huesaturation",val,0.1,0,-100,100)
@@ -292,3 +311,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
